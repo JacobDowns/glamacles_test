@@ -5,6 +5,7 @@ import sys
 import time
 import os
 from scipy.ndimage import gaussian_filter
+import torch
 
 # Necessary for multipool execution
 os.environ['OMP_NUM_THREADS'] = '1'
@@ -256,6 +257,14 @@ class SpecFO(object):
     def get_field(self, field):
         return field.dat.data[self.indexes].reshape(self.nx+1, self.ny+1)
     
+    """
+    Sets all velocity components from a tensor.
+    """
+    def set_velocity(self, U):
+        self.set_field(self.U.sub(0), U[0])
+        self.set_field(self.U.sub(1), U[1])
+        self.set_field(self.U.sub(2), U[2])
+        self.set_field(self.U.sub(3), U[3])
 
     """
     Generates geometry for an ideal ice sheet with bumpy bed
@@ -288,3 +297,40 @@ class SpecFO(object):
         H[H < 10.] = 10.
 
         return B, H
+    
+class PINNLoss(torch.autograd.Function):
+
+    @staticmethod
+    def forward(ctx, U, B, H, model):
+
+        ctx.model = model
+        ctx.U = U 
+        ctx.B = B
+        ctx.H = H
+
+        model.set_field(model.U, U)
+        model.set_field(model.B, B)
+        model.set_field(model.H, H)
+
+        R = df.assemble(model.R, tensor=model.dU)
+    
+        r = np.sqrt(R.dat.data[0]**2).sum()
+        r = torch.tensor(r, dtype=torch.float32) 
+     
+        return r
+
+    @staticmethod
+    def backward(ctx, grad_output):
+
+        model = ctx.model  
+        B = ctx.B
+        H = ctx.H
+
+        model.set_field(model.B, B)
+        model.set_field(model.H, H)
+
+        R = df.assemble(model.R, tensor=model.dU)
+        out = 0.
+        #dU = 
+
+        return out*grad_output, None, None, None
